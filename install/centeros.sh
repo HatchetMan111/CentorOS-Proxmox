@@ -53,7 +53,10 @@ SERVICE_USER="${SERVICE_USER:-root}"
 # Logging / Fehlerkette
 # ---------------------------------------------------------------------------
 LOG_PREFIX="[${APP}]"
-info()  { printf '%s INFO: %s\n' "$LOG_PREFIX" "$*"; }
+# Alles Logging geht auf stderr — stdout ist reserviert für Rückgabewerte aus
+# $(...)-Aufrufen (ensure_template, next_ctid, pick_*_storage). Sonst landet
+# Log-Text in Variablen wie tmpl_storage und pct create scheitert.
+info()  { printf '%s INFO: %s\n' "$LOG_PREFIX" "$*" >&2; }
 warn()  { printf '%s WARN: %s\n' "$LOG_PREFIX" "$*" >&2; }
 error() { printf '%s ERROR: %s\n' "$LOG_PREFIX" "$*" >&2; }
 
@@ -82,7 +85,7 @@ failure() {
     i=$((i + 1))
   done
   error "  Relevante Logs (Host, ggf. gekürzt):"
-  journalctl -xe --no-pager 2>/dev/null | tail -n 30 >&2 || true
+  journalctl --no-pager -p err 2>/dev/null | tail -n 20 >&2 || true
   if [[ -n "${CT_ID_IN_USE:-}" ]]; then
     error "  Container-Logs (CT ${CT_ID_IN_USE}):"
     pct exec "${CT_ID_IN_USE}" -- journalctl -u "${SERVICE_NAME}" --no-pager 2>/dev/null | tail -n 40 >&2 || true
