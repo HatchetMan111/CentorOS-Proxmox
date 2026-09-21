@@ -130,7 +130,7 @@ Web UI danach: `http://[LXC-IP]:8080` (bind `0.0.0.0`).
 ```bash
 # Update (im Container, idempotent)
 CTID=100  # anpassen
-pct exec $CTID -- bash -c 'git -C /opt/centeros pull --ff-only && systemctl restart centeros'
+pct exec $CTID -- bash -c 'git -C /opt/centeros pull --ff-only && git -C /opt/centeros-proxmox pull --ff-only && python3 /opt/centeros-proxmox/app/patch-dashboard.py --root /opt/centeros --overlay /opt/centeros-proxmox/app && cp -f /opt/centeros-proxmox/app/server.py /opt/centeros/server.py && systemctl restart centeros'
 pct exec $CTID -- systemctl status centeros --no-pager
 curl -s -o /dev/null -w '%{http_code}\n' http://$(pct exec $CTID -- hostname -I | awk '{print $1}'):8080/
 

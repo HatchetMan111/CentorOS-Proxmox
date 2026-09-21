@@ -54,6 +54,58 @@ CURATED_MODELS = [
     "deepseek/deepseek-chat",
 ]
 
+MODEL_CACHE_TTL = 600
+_MODEL_CACHE: dict = {"ts": 0.0, "items": [], "live": False}
+
+FAVICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    b'<rect width="64" height="64" rx="14" fill="#033660"/>'
+    b'<text x="30" y="45" font-family="Arial,Helvetica,sans-serif" font-size="36"'
+    b' font-weight="bold" fill="#ffffff" text-anchor="middle">C</text>'
+    b'<circle cx="46" cy="18" r="5" fill="#2c8ccc"/></svg>'
+)
+
+
+def _curated_items() -> list[dict]:
+    return [{"id": m, "name": m} for m in CURATED_MODELS]
+
+
+def fetch_openrouter_models() -> tuple[list[dict], bool]:
+    """Live model list from OpenRouter, cached 10 min. Returns (items, live)."""
+    import time
+
+    now = time.time()
+    if now - _MODEL_CACHE["ts"] < MODEL_CACHE_TTL and _MODEL_CACHE["items"]:
+        return _MODEL_CACHE["items"], _MODEL_CACHE["live"]
+    items = _curated_items()
+    live = False
+    try:
+        req = urllib.request.Request(f"{base_url()}/models", method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        parsed: list[dict] = []
+        for m in data.get("data", []):
+            mid = str(m.get("id") or "")
+            if not mid:
+                continue
+            pricing = m.get("pricing") or {}
+            try:
+                free = float(pricing.get("prompt") or 0) == 0
+            except (TypeError, ValueError):
+                free = mid.endswith(":free")
+            label = str(m.get("name") or mid)
+            if free:
+                label += " (free)"
+            parsed.append({"id": mid, "name": label, "free": free})
+        if parsed:
+            parsed.sort(key=lambda m: (not m.get("free"), m["id"]))
+            items = [{"id": m["id"], "name": m["name"]} for m in parsed]
+            live = True
+    except Exception:
+        pass
+    _MODEL_CACHE.update({"ts": now, "items": items, "live": live})
+    return items, live
+
 
 class OpenRouterError(Exception):
     def __init__(self, message: str, status: int = 502):
@@ -299,6 +351,33 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         return key
 
+    def _send_bytes(self, code: int, body: bytes, ctype: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_images(self) -> bool:
+        """Serve /images/* from <root>/images (sidebar logo lives there)."""
+        if not self.path.startswith("/images/"):
+            return False
+        target = (self.root / self.path.lstrip("/")).resolve()
+        try:
+            target.relative_to(self.root.resolve())
+        except ValueError:
+            self._json(403, {"error": "forbidden"})
+            return True
+        if not target.is_file():
+            self._json(404, {"error": "not found"})
+            return True
+        ctype = "image/png" if target.suffix == ".png" else "application/octet-stream"
+        try:
+            self._send_bytes(200, target.read_bytes(), ctype)
+        except OSError:
+            self._json(500, {"error": "could not read file"})
+        return True
+
     def do_GET(self) -> None:  # noqa: ANN201
         if self.path == "/api/health":
             self._json(200, {"status": "ok"})
@@ -306,17 +385,28 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/workflows":
             self._json(200, {"workflows": list_workflows(self.root)})
             return
+        if self.path == "/api/models":
+            items, live = fetch_openrouter_models()
+            self._json(200, {"models": items, "live": live, "count": len(items)})
+            return
         if self.path == "/api/settings":
             key = active_key(self.root)
+            items, live = fetch_openrouter_models()
             self._json(
                 200,
                 {
                     "openrouter_configured": bool(key),
                     "key_masked": masked(key),
                     "model": active_model(self.root),
-                    "models": CURATED_MODELS,
+                    "models": items,
+                    "models_live": live,
                 },
             )
+            return
+        if self.path in ("/favicon.ico", "/favicon.svg"):
+            self._send_bytes(200, FAVICON_SVG, "image/svg+xml")
+            return
+        if self._serve_images():
             return
         if self.path.startswith("/api/"):
             self._json(404, {"error": "unknown API endpoint"})

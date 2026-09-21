@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 
 END_MARKER = "<!-- WORKFLOW_LINKS_END -->"
+FAVICON_MARKER = "<!-- FAVICON_LINK -->"
+FAVICON_LINK = f'{FAVICON_MARKER}\n  <link rel="icon" href="/favicon.svg" type="image/svg+xml">'
 
 PAGES = ("add-workflow.html", "chat.html", "run-workflow.html", "settings.html")
 
@@ -74,6 +76,15 @@ def main() -> int:
             print(f"error: {END_MARKER} marker not found in dashboard/index.html", file=sys.stderr)
             return 1
         changed = False
+        if FAVICON_MARKER in html:
+            print("favicon link already present: dashboard/index.html")
+        elif "</head>" in html:
+            html = html.replace("</head>", "  " + FAVICON_LINK + "\n</head>", 1)
+            print("added favicon link: dashboard/index.html")
+            changed = True
+        else:
+            print("error: no </head> found in dashboard/index.html", file=sys.stderr)
+            return 1
         for marker, href, icon, label in LINKS:
             if marker in html:
                 print(f"sidebar link already present: {label}")

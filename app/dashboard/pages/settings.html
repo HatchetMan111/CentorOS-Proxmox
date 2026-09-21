@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Settings - CenterOS</title>
   <meta name="description" content="Configure the CenterOS OpenRouter API key and model.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../styles.css">
   <style>
     .settings-form { display: grid; gap: 16px; max-width: 640px; }
@@ -58,8 +59,9 @@
           <small>Get one at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>. Leave empty to keep the stored key.</small>
         </label>
         <label>Model
-          <select id="set-model"></select>
-          <small>Used for chat and workflow runs unless overridden per request.</small>
+          <input id="set-filter" placeholder="Type to filter 300+ models…" autocomplete="off">
+          <select id="set-model" size="8"></select>
+          <small id="set-models-note">Loading live model list…</small>
         </label>
         <button type="submit" id="set-submit">Save settings</button>
       </form>
@@ -70,6 +72,30 @@
   <script>
     const keyEl = document.getElementById("set-key");
     const modelEl = document.getElementById("set-model");
+    const filterEl = document.getElementById("set-filter");
+    let allModels = [];
+
+    function renderModels(current) {
+      const q = filterEl.value.trim().toLowerCase();
+      modelEl.innerHTML = "";
+      let shown = 0;
+      allModels.forEach((m) => {
+        if (q && !(m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))) return;
+        if (shown >= 200) return;
+        const opt = document.createElement("option");
+        opt.value = m.id; opt.textContent = m.name;
+        if (m.id === current) opt.selected = true;
+        modelEl.appendChild(opt);
+        shown++;
+      });
+      if (!modelEl.querySelector("[selected]") && current) {
+        const opt = document.createElement("option");
+        opt.value = current; opt.textContent = current + " (current)";
+        opt.selected = true;
+        modelEl.prepend(opt);
+      }
+    }
+    filterEl.addEventListener("input", () => renderModels(modelEl.value));
     const submitEl = document.getElementById("set-submit");
     const resultEl = document.getElementById("set-result");
 
@@ -79,15 +105,10 @@
       document.getElementById("status-text").textContent =
         data.openrouter_configured ? "Connected (" + data.key_masked + ")" : "No API key set";
       document.getElementById("status-model").textContent = data.model;
-      modelEl.innerHTML = "";
-      const models = data.models && data.models.length ? data.models : [data.model];
-      if (!models.includes(data.model)) models.unshift(data.model);
-      models.forEach((m) => {
-        const opt = document.createElement("option");
-        opt.value = m; opt.textContent = m;
-        if (m === data.model) opt.selected = true;
-        modelEl.appendChild(opt);
-      });
+      allModels = data.models && data.models.length ? data.models : [{ id: data.model, name: data.model }];
+      document.getElementById("set-models-note").textContent =
+        allModels.length + " models (" + (data.models_live ? "live from OpenRouter" : "offline fallback") + ").";
+      renderModels(data.model);
     }
 
     document.getElementById("settings-form").addEventListener("submit", async (ev) => {
