@@ -184,7 +184,8 @@ ensure_template() {
   else
     info "Template ${tmpl} bereits in ${storage} vorhanden."
   fi
-  printf '%s:%s' "$storage" "$tmpl"
+  # pct create braucht das Format STORAGE:vztmpl/DATEI (wie `pveam list` es zeigt)
+  printf '%s:vztmpl/%s' "$storage" "$tmpl"
 }
 
 create_container() {
