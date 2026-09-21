@@ -34,7 +34,8 @@ CT_ID="${CT_ID:-}"                     # leer = nächste freie ID automatisch
 CT_CPU="${CT_CPU:-1}"                  # vCPU (Spec: 1–2)
 CT_RAM="${CT_RAM:-1024}"               # MB (Spec: 1024–2048)
 CT_DISK_GB="${CT_DISK_GB:-8}"          # GB rootfs (Spec: 4–8, 8 = sicherer Default)
-CT_STORAGE="${CT_STORAGE:-}"           # leer = auto (local-lvm, sonst local)
+CT_DISK_STORAGE="${CT_DISK_STORAGE:-${CT_STORAGE:-}}"  # Root-Disk: leer = auto (local-lvm, sonst local)
+CT_TEMPLATE_STORAGE="${CT_TEMPLATE_STORAGE:-}"  # Template-Cache (vztmpl): leer = auto (local o. erster vztmpl-Storage)
 CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
 CT_NET="${CT_NET:-dhcp}"               # "dhcp" oder "static,ip=...,gw=..."
 CT_TEMPLATE="${CT_TEMPLATE:-debian-12-standard}"  # pveam-Template-Präfix
@@ -63,6 +64,12 @@ fi
 
 failure() {
   local exit_code=$?
+  # Einmal-Guard (Datei statt Variable: feuert sonst doppelt — in Subshell + Parent,
+  # z. B. bei tmpl_storage=$(ensure_template ...) — $$ ist in beiden gleich)
+  if [[ -f "${FAILURE_MARKER:-}" ]]; then
+    exit "$exit_code"
+  fi
+  [[ -n "${FAILURE_MARKER:-}" ]] && touch "$FAILURE_MARKER"
   local failed_cmd="${BASH_COMMAND:-unbekannt}"
   error "Installation FEHLGESCHLAGEN — komplette Fehlerkette:"
   error "  Exit-Code : ${exit_code}"
@@ -114,33 +121,60 @@ next_ctid() {
   fi
 }
 
-pick_storage() {
-  if [[ -n "$CT_STORAGE" ]]; then
-    echo "$CT_STORAGE"
+# Templates (vztmpl) brauchen File-Storage (z. B. local) — NIEMALS local-lvm.
+# Die Root-Disk dagegen bevorzugt local-lvm. Darum zwei getrennte Storages.
+pick_template_storage() {
+  if [[ -n "$CT_TEMPLATE_STORAGE" ]]; then
+    echo "$CT_TEMPLATE_STORAGE"
+    return
+  fi
+  local list s
+  list=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' || true)
+  for s in $list; do
+    if [[ "$s" == "local" ]]; then
+      echo "local"
+      return
+    fi
+  done
+  s=$(echo "$list" | head -n1)
+  if [[ -z "$s" ]]; then
+    error "Kein Storage mit Content-Typ 'vztmpl' gefunden. pvesm status:"
+    pvesm status >&2 || true
+    exit 1
+  fi
+  echo "$s"
+}
+
+pick_disk_storage() {
+  if [[ -n "$CT_DISK_STORAGE" ]]; then
+    echo "$CT_DISK_STORAGE"
     return
   fi
   if pvesm status --storage local-lvm >/dev/null 2>&1; then
     echo "local-lvm"
-  else
-    echo "local"
+    return
   fi
+  local s
+  s=$(pvesm status --content rootdir 2>/dev/null | awk 'NR>1 && $3=="active" {print $1; exit}' || true)
+  echo "${s:-local}"
 }
 
 ensure_template() {
-  local prefix="$1" storage tmpl
+  local prefix="$1" storage tmpl tstorage
+  tstorage=$(pick_template_storage)
   # Template-Cache aktualisieren (idempotent, Fehler tolerieren bei Offline-Mirror)
   pveam update >/dev/null 2>&1 || warn "pveam update fehlgeschlagen — nutze vorhandenen Cache."
   tmpl=$(pveam available --section system 2>/dev/null | grep -E "$prefix" | awk '{print $2}' | sort -V | tail -n1 || true)
   if [[ -z "$tmpl" ]]; then
-    # Fallback: bereits heruntergeladene Templates
-    tmpl=$(pveam list local 2>/dev/null | grep -E "$prefix" | awk '{print $1}' | sort -V | tail -n1 || true)
+    # Fallback: bereits heruntergeladene Templates auf dem Template-Storage
+    tmpl=$(pveam list "$tstorage" 2>/dev/null | grep -E "$prefix" | awk '{print $1}' | sort -V | tail -n1 || true)
   fi
   if [[ -z "$tmpl" ]]; then
     error "Kein LXC-Template für Präfix '$prefix' gefunden. Verfügbare System-Templates:"
     pveam available --section system 2>&1 | head -n 20 >&2 || true
     exit 1
   fi
-  storage=$(pick_storage)
+  storage="$tstorage"
   if ! pveam list "$storage" 2>/dev/null | grep -qF "$tmpl"; then
     info "Lade Template ${tmpl} nach ${storage} ..."
     pveam download "$storage" "$tmpl"
@@ -153,7 +187,7 @@ ensure_template() {
 create_container() {
   local ctid="$1" tmpl_storage="$2" storage password netconf
   CT_ID_IN_USE="$ctid"
-  storage=$(pick_storage)
+  storage=$(pick_disk_storage)
   if [[ -z "$CT_PASSWORD" ]]; then
     password=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
     PASSWORD_GENERATED=1
@@ -283,6 +317,8 @@ verify_installation() {
 }
 
 main() {
+  FAILURE_MARKER="/tmp/.centeros-install-failed-$$"
+  rm -f "$FAILURE_MARKER"
   check_host
   local ctid tmpl_storage
   ctid=$(next_ctid)
@@ -292,6 +328,7 @@ main() {
   create_container "$ctid" "$tmpl_storage"
   container_setup "$ctid"
   verify_installation "$ctid"
+  rm -f "$FAILURE_MARKER"
 }
 
 main "$@"

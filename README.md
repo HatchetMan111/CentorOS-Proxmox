@@ -20,7 +20,8 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/flatplanet/CenterOS/mai
 | `CT_ID` | _(leer)_ | leer = **nächste freie ID** via `pvesh get /cluster/nextid` |
 | `CT_CPU` / `CT_RAM` | `1` / `1024` | 1 vCPU, 1 GB RAM |
 | `CT_DISK_GB` | `8` | rootfs (Spec 4–8 GB, 8 = sicherer Default) |
-| `CT_STORAGE` | _(auto)_ | `local-lvm`, sonst `local` |
+| `CT_DISK_STORAGE` | _(auto)_ | Root-Disk: `local-lvm`, sonst erster `rootdir`-Storage |
+| `CT_TEMPLATE_STORAGE` | _(auto)_ | Template-Cache (`vztmpl`): `local`, sonst erster `vztmpl`-Storage — **nie `local-lvm`** |
 | `CT_BRIDGE` / `CT_NET` | `vmbr0` / `dhcp` | Netzwerk |
 | `WEB_PORT` | `8080` | Web UI, bind `0.0.0.0` |
 | `INSTALL_DIR` | `/opt/centeros` | Git-Checkout im Container |
