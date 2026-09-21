@@ -6,7 +6,7 @@ keine Cloud nötig) als **unprivilegierten Debian-12-LXC** mit systemd-Service a
 ## Installation (auf dem Proxmox-Host als root)
 
 ```bash
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/flatplanet/CenterOS/main/install/centeros.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/CentorOS-Proxmox/main/install/centeros.sh)"
 ```
 
 > Datei gehört in deinem Fork nach `install/centeros.sh` (dieses Bundle: `install/centeros.sh`,
@@ -30,7 +30,7 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/flatplanet/CenterOS/mai
 Beispiel mit eigenem Port / ID / Hostname:
 
 ```bash
-CT_ID=150 CT_HOSTNAME=centeros WEB_PORT=8090 bash -c "$(wget -qLO - https://raw.githubusercontent.com/flatplanet/CenterOS/main/install/centeros.sh)"
+CT_ID=150 CT_HOSTNAME=centeros WEB_PORT=8090 bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/CentorOS-Proxmox/main/install/centeros.sh)"
 ```
 
 ## Workflows

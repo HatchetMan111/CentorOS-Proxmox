@@ -3,7 +3,7 @@
 # CenterOS — Proxmox VE Community-Scripts style installer (LXC)
 #
 # Einzeiler auf dem Proxmox-Host (als root):
-#   bash -c "$(wget -qLO - https://raw.githubusercontent.com/flatplanet/CenterOS/main/install/centeros.sh)"
+#   bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/CentorOS-Proxmox/main/install/centeros.sh)"
 #
 # Was das Skript tut:
 #   1. ermittelt die nächste freie CT-ID (pvesh get /cluster/nextid)
