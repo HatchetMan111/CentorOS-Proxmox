@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/centeros/dashboard
-ExecStart=/usr/bin/python3 -m http.server 8080 --bind 0.0.0.0 --directory /opt/centeros/dashboard
+WorkingDirectory=/opt/centeros
+ExecStart=/usr/bin/python3 /opt/centeros/server.py --root /opt/centeros --port 8080 --bind 0.0.0.0
 Restart=always
 RestartSec=3
 

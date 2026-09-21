@@ -11,7 +11,9 @@
 #      (onboot=1, DHCP auf vmbr0, 1 vCPU / 1 GB RAM / 8 GB Disk per Default)
 #   3. installiert im Container: python3, git, curl, ca-certificates
 #   4. klont https://github.com/flatplanet/CenterOS nach /opt/centeros (idempotent: git pull bei Re-Run)
-#   5. installiert + aktiviert systemd-Service centeros.service (python http.server :8080, bind 0.0.0.0)
+#      + Overlay aus HatchetMan111/CentorOS-Proxmox: Beispiel-Workflows,
+#        Dashboard-Server (server.py) und "+ Workflow"-Seite
+#   5. installiert + aktiviert systemd-Service centeros.service (server.py :8080, bind 0.0.0.0)
 #   6. verifiziert: systemctl is-active + HTTP-Check auf localhost:8080, gibt finale URL + CT-IP aus
 #
 # Debugging: DEBUG=1 bash -x ... für Trace; bei Fehlern wird die komplette
@@ -28,6 +30,10 @@ GH_REPO="flatplanet/CenterOS"          # ohne https://github.com/ Prefix
 GH_BRANCH="${GH_BRANCH:-main}"
 GITHUB_URL="https://github.com/${GH_REPO}"
 RAW_BASE="https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}"
+# Overlay: Beispiel-Workflows + Dashboard-Server aus diesem Installer-Repo
+OVERLAY_REPO="${OVERLAY_REPO:-HatchetMan111/CentorOS-Proxmox}"
+OVERLAY_BRANCH="${OVERLAY_BRANCH:-main}"
+OVERLAY_DIR="${OVERLAY_DIR:-/opt/centeros-proxmox}"
 
 CT_HOSTNAME="${CT_HOSTNAME:-centeros}" # LXC-Name (Anforderung: passender Name)
 CT_ID="${CT_ID:-}"                     # leer = nächste freie ID automatisch
@@ -265,6 +271,32 @@ if [[ ! -f "${INSTALL_DIR}/dashboard/index.html" ]]; then
   ls -la "${INSTALL_DIR}" >&2 || true
   exit 1
 fi
+echo "[centeros-guest] INFO: Overlay-Checkout https://github.com/${OVERLAY_REPO} -> ${OVERLAY_DIR} ..."
+if [[ -d "${OVERLAY_DIR}/.git" ]]; then
+  git -C "${OVERLAY_DIR}" fetch --all
+  git -C "${OVERLAY_DIR}" checkout "${OVERLAY_BRANCH}"
+  git -C "${OVERLAY_DIR}" pull --ff-only || git -C "${OVERLAY_DIR}" reset --hard "origin/${OVERLAY_BRANCH}"
+else
+  rm -rf "${OVERLAY_DIR}"
+  git clone --depth 1 --branch "${OVERLAY_BRANCH}" "https://github.com/${OVERLAY_REPO}.git" "${OVERLAY_DIR}"
+fi
+echo "[centeros-guest] INFO: Beispiel-Workflows + Server deployen ..."
+cp -f "${OVERLAY_DIR}/app/server.py" "${INSTALL_DIR}/server.py"
+chmod +x "${INSTALL_DIR}/server.py"
+for d in "${OVERLAY_DIR}"/app/workflows/*/; do
+  slug=$(basename "$d")
+  if [[ ! -e "${INSTALL_DIR}/workflows/${slug}" ]]; then
+    cp -r "$d" "${INSTALL_DIR}/workflows/${slug}"
+    echo "[centeros-guest] INFO: Beispiel-Workflow installiert: ${slug}"
+  else
+    echo "[centeros-guest] INFO: Workflow existiert bereits, übersprungen: ${slug}"
+  fi
+done
+python3 "${OVERLAY_DIR}/app/patch-dashboard.py" --root "${INSTALL_DIR}" --overlay "${OVERLAY_DIR}/app"
+echo "[centeros-guest] INFO: Dashboard-Seiten für Beispiel-Workflows erzeugen ..."
+python3 "${INSTALL_DIR}/dashboard/create-dashboard-page.py" meeting-summary "Meeting Summary" "Turns transcripts into summaries and action items." --icon bi-mic --force
+python3 "${INSTALL_DIR}/dashboard/create-dashboard-page.py" research-brief "Research Brief" "Turns a topic into a source-grounded research brief." --icon bi-search --force
+python3 "${INSTALL_DIR}/dashboard/create-dashboard-page.py" content-planner "Content Planner" "Turns one topic idea into a one-week content plan." --icon bi-calendar3 --force
 echo "[centeros-guest] INFO: systemd-Unit ${SERVICE_NAME}.service schreiben ..."
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<UNIT
 [Unit]
@@ -275,8 +307,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}/dashboard
-ExecStart=/usr/bin/python3 -m http.server ${WEB_PORT} --bind 0.0.0.0 --directory ${INSTALL_DIR}/dashboard
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=/usr/bin/python3 ${INSTALL_DIR}/server.py --root ${INSTALL_DIR} --port ${WEB_PORT} --bind 0.0.0.0
 Restart=always
 RestartSec=3
 
@@ -308,12 +340,21 @@ verify_installation() {
     pct exec "$ctid" -- curl -v "http://localhost:${WEB_PORT}/" >&2 || true
     exit 1
   fi
+  api_body=$(pct exec "$ctid" -- curl -s "http://localhost:${WEB_PORT}/api/workflows" 2>&1)
+  echo "  API-Check http://localhost:${WEB_PORT}/api/workflows -> ${api_body}"
+  if ! printf '%s' "$api_body" | grep -q "meeting-summary"; then
+    error "Workflow-API liefert keine Beispiel-Workflows. server.py-Logs:"
+    pct exec "$ctid" -- journalctl -u "$SERVICE_NAME" --no-pager -n 30 >&2 || true
+    exit 1
+  fi
   ip=$(pct exec "$ctid" -- hostname -I 2>/dev/null | awk '{print $1}')
   echo ""
   echo "=================================================================="
   echo " ${APP_NAME} erfolgreich installiert!"
   echo "  Container : CT ${ctid} (hostname: ${CT_HOSTNAME}, onboot=1)"
   echo "  Web UI    : http://${ip:-<CT-IP>}:${WEB_PORT}"
+  echo "  Workflows : 3 Beispiele vorinstalliert (meeting-summary, research-brief, content-planner)"
+  echo "  +Workflow : Sidebar-Eintrag '+ Workflow' im Dashboard für eigene Workflows"
   echo "  Service   : systemctl status ${SERVICE_NAME} (in CT ${ctid})"
   echo "  Update    : pct exec ${ctid} -- bash -c 'git -C ${INSTALL_DIR} pull --ff-only && systemctl restart ${SERVICE_NAME}'"
   echo "  Entfernen : pct stop ${ctid} && pct destroy ${ctid}"

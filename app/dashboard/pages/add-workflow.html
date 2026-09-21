@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Workflow - CenterOS</title>
+  <meta name="description" content="Create a new CenterOS workflow from the dashboard.">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .workflow-form { display: grid; gap: 16px; max-width: 640px; }
+    .workflow-form label { display: grid; gap: 6px; font-weight: 650; font-size: 16px; }
+    .workflow-form small { color: var(--muted); font-weight: 400; }
+    .workflow-form input, .workflow-form select {
+      padding: 12px 14px; font-size: 16px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: 9px; background: var(--white); color: var(--ink);
+    }
+    .workflow-form button {
+      justify-self: start; padding: 12px 26px; font-size: 17px; font-weight: 750;
+      color: var(--white); background: var(--brand); border: 0; border-radius: 9px; cursor: pointer;
+    }
+    .workflow-form button:disabled { opacity: 0.6; cursor: wait; }
+    .form-result { display: none; padding: 18px 22px; }
+    .form-result.ok { display: block; border-left: 5px solid #2c8ccc; }
+    .form-result.err { display: block; border-left: 5px solid #c0392b; }
+    .form-result p { margin: 6px 0; }
+  </style>
+</head>
+<body class="dashboard-frame-page">
+  <header class="topbar">
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href="home.html">CenterOS</a>
+      <span aria-hidden="true">/</span>
+      <span>Workflows</span>
+      <span aria-hidden="true">/</span>
+      <span>Add Workflow</span>
+    </nav>
+    <div class="install-status" aria-label="Install status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>Ready</span>
+    </div>
+  </header>
+
+  <section class="dashboard-page">
+    <header class="dashboard-page-header">
+      <p class="eyebrow">Workflows</p>
+      <h1>Add Workflow</h1>
+      <p>Create a new workflow: scaffold its files and wire its dashboard page into the sidebar.</p>
+    </header>
+
+    <div class="dashboard-section">
+      <form class="workflow-form" id="workflow-form">
+        <label>Name
+          <input id="wf-name" name="name" required maxlength="80" placeholder="Meeting Summary" autocomplete="off">
+          <small>Display name shown on the dashboard page and sidebar.</small>
+        </label>
+        <label>Slug
+          <input id="wf-slug" name="slug" required maxlength="60" placeholder="meeting-summary" autocomplete="off">
+          <small>Lowercase kebab-case (letters, numbers, hyphens). Used for directories and URLs.</small>
+        </label>
+        <label>Description
+          <input id="wf-desc" name="description" required maxlength="200" placeholder="Turns transcripts into summaries and action items." autocomplete="off">
+          <small>One sentence describing what the workflow does.</small>
+        </label>
+        <label>Icon
+          <select id="wf-icon" name="icon">
+            <option value="bi-file-earmark-text">Document</option>
+            <option value="bi-mic">Meeting / Audio</option>
+            <option value="bi-search">Research</option>
+            <option value="bi-calendar3">Planning</option>
+            <option value="bi-lightbulb">Idea</option>
+            <option value="bi-compass">Explore</option>
+            <option value="bi-bar-chart-line">Metrics</option>
+            <option value="bi-sliders">Settings</option>
+          </select>
+        </label>
+        <button type="submit" id="wf-submit">Create workflow</button>
+      </form>
+      <div class="form-result dashboard-section" id="wf-result" role="status"></div>
+    </div>
+  </section>
+
+  <script>
+    const nameEl = document.getElementById("wf-name");
+    const slugEl = document.getElementById("wf-slug");
+    const descEl = document.getElementById("wf-desc");
+    const iconEl = document.getElementById("wf-icon");
+    const submitEl = document.getElementById("wf-submit");
+    const resultEl = document.getElementById("wf-result");
+
+    nameEl.addEventListener("input", () => {
+      if (slugEl.dataset.touched) return;
+      slugEl.value = nameEl.value.toLowerCase().trim()
+        .replace(/[^a-z0-9\s-]/g, "").replace(/[\s_]+/g, "-").replace(/-+/g, "-")
+        .replace(/^-|-$/g, "").slice(0, 60);
+    });
+    slugEl.addEventListener("input", () => { slugEl.dataset.touched = "1"; });
+
+    function showResult(ok, html) {
+      resultEl.className = "form-result dashboard-section " + (ok ? "ok" : "err");
+      resultEl.innerHTML = html;
+    }
+
+    document.getElementById("workflow-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      submitEl.disabled = true;
+      try {
+        const res = await fetch("/api/workflows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug: slugEl.value.trim(),
+            name: nameEl.value.trim(),
+            description: descEl.value.trim(),
+            icon: iconEl.value
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showResult(false, "<p><strong>Failed (" + res.status + "):</strong> " +
+            (data.error || "unknown error") + "</p>" +
+            (data.detail ? "<p><small>" + data.detail + "</small></p>" : ""));
+          return;
+        }
+        showResult(true,
+          "<p><strong>Workflow created:</strong> " + data.name + " (" + data.slug + ")</p>" +
+          "<p><a href=\"" + data.dashboard + "\">Open its dashboard page</a> &middot; " +
+          "<a href=\"#\" id=\"wf-reload\">Reload sidebar to see the new link</a></p>");
+        document.getElementById("wf-reload").addEventListener("click", (e) => {
+          e.preventDefault();
+          parent.location.reload();
+        });
+      } catch (err) {
+        showResult(false, "<p><strong>Request failed:</strong> " + err + "</p>");
+      } finally {
+        submitEl.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

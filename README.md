@@ -33,6 +33,36 @@ Beispiel mit eigenem Port / ID / Hostname:
 CT_ID=150 CT_HOSTNAME=centeros WEB_PORT=8090 bash -c "$(wget -qLO - https://raw.githubusercontent.com/flatplanet/CenterOS/main/install/centeros.sh)"
 ```
 
+## Workflows
+
+Drei Beispiel-Workflows sind vorinstalliert (jeweils `workflows/<slug>/CONTEXT.md` + `LOG.md`,
+Dashboard-Seite in der Sidebar verlinkt):
+
+| Workflow | Zweck |
+|---|---|
+| `meeting-summary` | Transkript → Zusammenfassung, Action Items, Follow-up-Mail |
+| `research-brief` | Thema → quellenbasiertes Research-Briefing |
+| `content-planner` | Themenidee → 1-Wochen-Content-Plan |
+
+**Eigene Workflows hinzufügen** — drei Wege:
+
+1. **Web UI (empfohlen):** Sidebar → `+ Workflow` → Formular ausfüllen. Erstellt Workflow-Dateien +
+   Dashboard-Seite + Sidebar-Link sofort, ohne Neustart.
+2. **Im Container (CLI):**
+   ```bash
+   pct exec <CTID> -- python3 /opt/centeros/dashboard/create-dashboard-page.py mein-workflow "Mein Workflow" "Was er tut." --icon bi-lightbulb
+   ```
+   Dazu `workflows/mein-workflow/CONTEXT.md` + `LOG.md` nach `templates/workflow/`-Schema anlegen.
+3. **API:**
+   ```bash
+   curl -X POST http://<CT-IP>:8080/api/workflows -H 'Content-Type: application/json' \
+     -d '{"slug":"mein-workflow","name":"Mein Workflow","description":"Was er tut.","icon":"bi-lightbulb"}'
+   ```
+
+Eigene Beispiel-Workflows für alle Neuinstallationen: in diesem Repo unter `app/workflows/<slug>/`
+ablegen — der Installer kopiert fehlende Workflows idempotent nach `/opt/centeros/workflows/`
+(bestehende werden nie überschrieben).
+
 ## Was das Skript tut
 
 1. Prüft Proxmox-Host (`pct`, `pvesh`, `pveam`, root).
