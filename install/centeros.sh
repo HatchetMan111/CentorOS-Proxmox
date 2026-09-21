@@ -284,12 +284,12 @@ echo "[centeros-guest] INFO: Beispiel-Workflows + Server deployen ..."
 cp -f "${OVERLAY_DIR}/app/server.py" "${INSTALL_DIR}/server.py"
 chmod +x "${INSTALL_DIR}/server.py"
 for d in "${OVERLAY_DIR}"/app/workflows/*/; do
-  slug=$(basename "$d")
-  if [[ ! -e "${INSTALL_DIR}/workflows/${slug}" ]]; then
-    cp -r "$d" "${INSTALL_DIR}/workflows/${slug}"
-    echo "[centeros-guest] INFO: Beispiel-Workflow installiert: ${slug}"
+  slug=\$(basename "\$d")
+  if [[ ! -e "${INSTALL_DIR}/workflows/\${slug}" ]]; then
+    cp -r "\$d" "${INSTALL_DIR}/workflows/\${slug}"
+    echo "[centeros-guest] INFO: Beispiel-Workflow installiert: \${slug}"
   else
-    echo "[centeros-guest] INFO: Workflow existiert bereits, übersprungen: ${slug}"
+    echo "[centeros-guest] INFO: Workflow existiert bereits, übersprungen: \${slug}"
   fi
 done
 python3 "${OVERLAY_DIR}/app/patch-dashboard.py" --root "${INSTALL_DIR}" --overlay "${OVERLAY_DIR}/app"
