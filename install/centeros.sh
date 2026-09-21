@@ -14,7 +14,9 @@
 #      + Overlay aus HatchetMan111/CentorOS-Proxmox: Beispiel-Workflows,
 #        Dashboard-Server (server.py) und "+ Workflow"-Seite
 #   5. installiert + aktiviert systemd-Service centeros.service (server.py :8080, bind 0.0.0.0)
-#   6. verifiziert: systemctl is-active + HTTP-Check auf localhost:8080, gibt finale URL + CT-IP aus
+#      + schreibt /opt/centeros/config.json (OPENROUTER_API_KEY/MODEL, 0600)
+#   6. verifiziert: systemctl is-active + HTTP-Check + Workflow-API-Check +
+#      OpenRouter-Key-Check (nur Warnung bei Fehler), gibt finale URL + CT-IP aus
 #
 # Debugging: DEBUG=1 bash -x ... für Trace; bei Fehlern wird die komplette
 # Fehlermeldungskette (Exit-Code, Befehl, Zeile, Stack, Journal-Auszug) ausgegeben.
@@ -34,6 +36,10 @@ RAW_BASE="https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}"
 OVERLAY_REPO="${OVERLAY_REPO:-HatchetMan111/CentorOS-Proxmox}"
 OVERLAY_BRANCH="${OVERLAY_BRANCH:-main}"
 OVERLAY_DIR="${OVERLAY_DIR:-/opt/centeros-proxmox}"
+# AI (OpenRouter): Key bei https://openrouter.ai/keys holen. Leer = später per
+# Settings-Seite im Dashboard setzen. Modell jederzeit dort änderbar.
+OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
+OPENROUTER_MODEL="${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}"
 
 CT_HOSTNAME="${CT_HOSTNAME:-centeros}" # LXC-Name (Anforderung: passender Name)
 CT_ID="${CT_ID:-}"                     # leer = nächste freie ID automatisch
@@ -297,6 +303,17 @@ echo "[centeros-guest] INFO: Dashboard-Seiten für Beispiel-Workflows erzeugen .
 python3 "${INSTALL_DIR}/dashboard/create-dashboard-page.py" meeting-summary "Meeting Summary" "Turns transcripts into summaries and action items." --icon bi-mic --force
 python3 "${INSTALL_DIR}/dashboard/create-dashboard-page.py" research-brief "Research Brief" "Turns a topic into a source-grounded research brief." --icon bi-search --force
 python3 "${INSTALL_DIR}/dashboard/create-dashboard-page.py" content-planner "Content Planner" "Turns one topic idea into a one-week content plan." --icon bi-calendar3 --force
+echo "[centeros-guest] INFO: AI-Konfiguration schreiben (config.json, nur Server-seitig) ..."
+python3 - "${INSTALL_DIR}" "${OPENROUTER_API_KEY}" "${OPENROUTER_MODEL}" <<'PYEOF'
+import json, os, sys
+root, key, model = sys.argv[1], sys.argv[2], sys.argv[3]
+path = os.path.join(root, "config.json")
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump({"openrouter_api_key": key, "openrouter_model": model}, fh, indent=2)
+    fh.write("\n")
+os.chmod(path, 0o600)
+print("config.json written (key set: %s, model: %s)" % (bool(key), model))
+PYEOF
 echo "[centeros-guest] INFO: systemd-Unit ${SERVICE_NAME}.service schreiben ..."
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<UNIT
 [Unit]
@@ -347,12 +364,27 @@ verify_installation() {
     pct exec "$ctid" -- journalctl -u "$SERVICE_NAME" --no-pager -n 30 >&2 || true
     exit 1
   fi
+  if [[ -n "$OPENROUTER_API_KEY" ]]; then
+    key_http=$(pct exec "$ctid" -- curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+      "https://openrouter.ai/api/v1/auth/key" -H "Authorization: Bearer ${OPENROUTER_API_KEY}" 2>&1)
+    echo "  OpenRouter-Key-Check -> HTTP ${key_http}"
+    if [[ "$key_http" == "200" ]]; then
+      AI_STATUS="Key gültig (Modell: ${OPENROUTER_MODEL})"
+    else
+      AI_STATUS="WARNUNG: Key abgelehnt (HTTP ${key_http}) — in Dashboard-Settings prüfen"
+      warn "OpenRouter-Key wurde abgelehnt (HTTP ${key_http}). Installation läuft weiter; Key in der Settings-Seite korrigieren."
+    fi
+  else
+    AI_STATUS="kein Key — Chat/Run brauchen Key aus https://openrouter.ai/keys (Dashboard > Settings)"
+    warn "Kein OPENROUTER_API_KEY gesetzt — Chat + Workflow-Runs brauchen einen Key (Dashboard > Settings)."
+  fi
   ip=$(pct exec "$ctid" -- hostname -I 2>/dev/null | awk '{print $1}')
   echo ""
   echo "=================================================================="
   echo " ${APP_NAME} erfolgreich installiert!"
   echo "  Container : CT ${ctid} (hostname: ${CT_HOSTNAME}, onboot=1)"
   echo "  Web UI    : http://${ip:-<CT-IP>}:${WEB_PORT}"
+  echo "  AI        : ${AI_STATUS:-unbekannt}"
   echo "  Workflows : 3 Beispiele vorinstalliert (meeting-summary, research-brief, content-planner)"
   echo "  +Workflow : Sidebar-Eintrag '+ Workflow' im Dashboard für eigene Workflows"
   echo "  Service   : systemctl status ${SERVICE_NAME} (in CT ${ctid})"

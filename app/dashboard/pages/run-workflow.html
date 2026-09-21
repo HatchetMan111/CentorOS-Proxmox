@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run Workflow - CenterOS</title>
+  <meta name="description" content="Run a CenterOS workflow on your input via the configured AI model.">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .run-form { display: grid; gap: 16px; max-width: 760px; margin-bottom: 20px; }
+    .run-form label { display: grid; gap: 6px; font-weight: 650; font-size: 16px; }
+    .run-form small { color: var(--muted); font-weight: 400; }
+    .run-form select, .run-form textarea {
+      padding: 12px 14px; font-size: 16px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: 9px; background: var(--white); color: var(--ink);
+    }
+    .run-form textarea { min-height: 160px; resize: vertical; }
+    .run-form button {
+      justify-self: start; padding: 12px 26px; font-size: 17px; font-weight: 750;
+      color: var(--white); background: var(--brand); border: 0; border-radius: 9px; cursor: pointer;
+    }
+    .run-form button:disabled { opacity: 0.6; cursor: wait; }
+    .run-output { max-width: 900px; }
+    .run-output pre { margin: 0; white-space: pre-wrap; font-size: 15px; line-height: 1.55; }
+  </style>
+</head>
+<body class="dashboard-frame-page">
+  <header class="topbar">
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href="home.html">CenterOS</a>
+      <span aria-hidden="true">/</span>
+      <span>Workflows</span>
+      <span aria-hidden="true">/</span>
+      <span>Run</span>
+    </nav>
+    <div class="install-status" aria-label="Install status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>Ready</span>
+    </div>
+  </header>
+
+  <section class="dashboard-page">
+    <header class="dashboard-page-header">
+      <p class="eyebrow">Workflows</p>
+      <h1>Run Workflow</h1>
+      <p>Pick a workflow, paste your input, get the result. Every run is logged to the workflow's LOG.md.</p>
+    </header>
+
+    <form class="run-form" id="run-form">
+      <label>Workflow
+        <select id="run-wf"></select>
+        <small>Need another one? Create it via <a href="add-workflow.html">+ Workflow</a>.</small>
+      </label>
+      <label>Input
+        <textarea id="run-input" required placeholder="Paste your meeting transcript, research question, topic idea…"></textarea>
+      </label>
+      <button type="submit" id="run-submit">Run workflow</button>
+    </form>
+
+    <div class="dashboard-section run-output" id="run-output" style="display:none" role="status"></div>
+  </section>
+
+  <script>
+    const wfEl = document.getElementById("run-wf");
+    const inputEl = document.getElementById("run-input");
+    const submitEl = document.getElementById("run-submit");
+    const outputEl = document.getElementById("run-output");
+
+    function esc(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    fetch("/api/workflows").then((r) => r.json()).then((data) => {
+      (data.workflows || []).forEach((w) => {
+        const opt = document.createElement("option");
+        opt.value = w.slug; opt.textContent = w.name + " (" + w.slug + ")";
+        wfEl.appendChild(opt);
+      });
+    }).catch(() => {});
+
+    fetch("/api/settings").then((r) => r.json()).then((data) => {
+      if (!data.openrouter_configured) {
+        outputEl.style.display = "block";
+        outputEl.innerHTML = "<pre>No API key set. Open <a href=\"settings.html\">Settings</a> first.</pre>";
+      }
+    }).catch(() => {});
+
+    document.getElementById("run-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      submitEl.disabled = true;
+      outputEl.style.display = "block";
+      outputEl.innerHTML = "<pre>Running…</pre>";
+      try {
+        const res = await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workflow: wfEl.value, input: inputEl.value })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          outputEl.innerHTML = "<pre>Error (" + res.status + "): " + esc(
+            data.error || "unknown") + (data.hint ? "\n" + esc(data.hint) : "") + "</pre>";
+          return;
+        }
+        outputEl.innerHTML = "<pre>" + esc(data.output) + "</pre>";
+      } catch (err) {
+        outputEl.innerHTML = "<pre>Request failed: " + esc(String(err)) + "</pre>";
+      } finally {
+        submitEl.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

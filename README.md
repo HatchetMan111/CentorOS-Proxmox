@@ -33,6 +33,36 @@ Beispiel mit eigenem Port / ID / Hostname:
 CT_ID=150 CT_HOSTNAME=centeros WEB_PORT=8090 bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/CentorOS-Proxmox/main/install/centeros.sh)"
 ```
 
+## AI nutzen (Chat + Workflow-Runs via OpenRouter)
+
+Dashboard allein zeigt nur Seiten an — für echte Arbeit braucht es einen
+**OpenRouter API Key** (https://openrouter.ai/keys, kostenlose `:free`-Modelle verfügbar).
+Danach: Sidebar → **Chat** (freies Chatten) und **Run** (Workflow wählen, Input einfügen,
+Ergebnis kommt vom Modell und landet im `LOG.md` des Workflows).
+
+**Key setzen — drei Wege:**
+
+```bash
+# 1. Direkt bei Installation (führt Key-Check aus, warnt nur bei Fehler)
+OPENROUTER_API_KEY=sk-or-... bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/CentorOS-Proxmox/main/install/centeros.sh)"
+
+# 2. Später im Dashboard: Sidebar > Settings (empfohlen — landet nicht in der Shell-History)
+# 3. Im Container: Key nach /opt/centeros/config.json eintragen (0600), dann
+pct exec <CTID> -- systemctl restart centeros
+```
+
+Tipp: Befehl mit führendem Leerzeichen starten (` HISTCONTROL=ignorespace` vorausgesetzt),
+damit der Key nicht in `~/.bash_history` landet.
+
+| Variable | Default | Bedeutung |
+|---|---|---|
+| `OPENROUTER_API_KEY` | _(leer)_ | Key für Chat + Runs; leer = später per Settings-Seite |
+| `OPENROUTER_MODEL` | `meta-llama/llama-3.3-70b-instruct:free` | Standard-Modell (in Settings änderbar) |
+
+Der Key liegt nur Server-seitig in `/opt/centeros/config.json` (Mode 600) und wird nie an
+den Browser geschickt (API zeigt nur `sk-o…1234`). Ohne Key antworten `/api/chat` und
+`/api/run` mit `400 + Hinweis auf die Settings-Seite` statt kommentarlos zu scheitern.
+
 ## Workflows
 
 Drei Beispiel-Workflows sind vorinstalliert (jeweils `workflows/<slug>/CONTEXT.md` + `LOG.md`,

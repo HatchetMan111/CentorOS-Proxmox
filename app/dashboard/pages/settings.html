@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings - CenterOS</title>
+  <meta name="description" content="Configure the CenterOS OpenRouter API key and model.">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .settings-form { display: grid; gap: 16px; max-width: 640px; }
+    .settings-form label { display: grid; gap: 6px; font-weight: 650; font-size: 16px; }
+    .settings-form small { color: var(--muted); font-weight: 400; }
+    .settings-form input, .settings-form select {
+      padding: 12px 14px; font-size: 16px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: 9px; background: var(--white); color: var(--ink);
+    }
+    .settings-form button {
+      justify-self: start; padding: 12px 26px; font-size: 17px; font-weight: 750;
+      color: var(--white); background: var(--brand); border: 0; border-radius: 9px; cursor: pointer;
+    }
+    .settings-form button:disabled { opacity: 0.6; cursor: wait; }
+    .status-card { margin-bottom: 22px; max-width: 640px; }
+    .status-card p { margin: 6px 0; }
+    .form-result { display: none; padding: 18px 22px; max-width: 640px; margin-top: 16px; }
+    .form-result.ok { display: block; border-left: 5px solid #2c8ccc; }
+    .form-result.err { display: block; border-left: 5px solid #c0392b; }
+  </style>
+</head>
+<body class="dashboard-frame-page">
+  <header class="topbar">
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href="home.html">CenterOS</a>
+      <span aria-hidden="true">/</span>
+      <span>Settings</span>
+    </nav>
+    <div class="install-status" aria-label="Install status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>Ready</span>
+    </div>
+  </header>
+
+  <section class="dashboard-page">
+    <header class="dashboard-page-header">
+      <p class="eyebrow">Configuration</p>
+      <h1>Settings</h1>
+      <p>Connect an OpenRouter API key to unlock chat and workflow runs. The key stays on this server.</p>
+    </header>
+
+    <div class="dashboard-section status-card" id="status-card">
+      <p><strong>Status:</strong> <span id="status-text">loading…</span></p>
+      <p><strong>Model:</strong> <span id="status-model">–</span></p>
+    </div>
+
+    <div class="dashboard-section">
+      <form class="settings-form" id="settings-form">
+        <label>OpenRouter API key
+          <input id="set-key" type="password" placeholder="sk-or-…" autocomplete="off">
+          <small>Get one at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>. Leave empty to keep the stored key.</small>
+        </label>
+        <label>Model
+          <select id="set-model"></select>
+          <small>Used for chat and workflow runs unless overridden per request.</small>
+        </label>
+        <button type="submit" id="set-submit">Save settings</button>
+      </form>
+      <div class="form-result dashboard-section" id="set-result" role="status"></div>
+    </div>
+  </section>
+
+  <script>
+    const keyEl = document.getElementById("set-key");
+    const modelEl = document.getElementById("set-model");
+    const submitEl = document.getElementById("set-submit");
+    const resultEl = document.getElementById("set-result");
+
+    async function loadStatus() {
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      document.getElementById("status-text").textContent =
+        data.openrouter_configured ? "Connected (" + data.key_masked + ")" : "No API key set";
+      document.getElementById("status-model").textContent = data.model;
+      modelEl.innerHTML = "";
+      const models = data.models && data.models.length ? data.models : [data.model];
+      if (!models.includes(data.model)) models.unshift(data.model);
+      models.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m; opt.textContent = m;
+        if (m === data.model) opt.selected = true;
+        modelEl.appendChild(opt);
+      });
+    }
+
+    document.getElementById("settings-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      submitEl.disabled = true;
+      try {
+        const body = { model: modelEl.value };
+        if (keyEl.value.trim()) body.api_key = keyEl.value.trim();
+        const res = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          resultEl.className = "form-result dashboard-section err";
+          resultEl.innerHTML = "<p><strong>Failed:</strong> " + (data.error || "unknown error") + "</p>";
+          return;
+        }
+        resultEl.className = "form-result dashboard-section ok";
+        resultEl.innerHTML = "<p><strong>Saved.</strong> Key: " +
+          (data.key_masked || "unchanged") + " · Model: " + data.model + "</p>";
+        keyEl.value = "";
+        loadStatus();
+      } catch (err) {
+        resultEl.className = "form-result dashboard-section err";
+        resultEl.innerHTML = "<p><strong>Request failed:</strong> " + err + "</p>";
+      } finally {
+        submitEl.disabled = false;
+      }
+    });
+
+    loadStatus();
+  </script>
+</body>
+</html>
